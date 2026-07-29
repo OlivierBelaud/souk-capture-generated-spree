@@ -1,0 +1,27 @@
+{
+  "name": "cloned-app",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "next": "16.2.12",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "postcss": "8.5.18",
+    "sharp": "0.35.0"
+  },
+  "devDependencies": {
+    "typescript": "5.7.3",
+    "@types/node": "22.10.5",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3"
+  },
+  "overrides": {
+    "postcss": "8.5.18",
+    "sharp": "0.35.0"
+  }
+}
