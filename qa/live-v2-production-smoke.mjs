@@ -343,6 +343,10 @@ async function waitForGeneration(projectId, token) {
       status: generation.status,
       phase: generation.phase,
       progress: generation.progress,
+      ...(generation.error ? { error: generation.error } : {}),
+      ...(["succeeded", "review", "failed", "cancelled"].includes(generation.status) && generation.log
+        ? { logTail: String(generation.log).slice(-8_000) }
+        : {}),
     });
     if (["succeeded", "review", "failed", "cancelled"].includes(generation.status)) return generation;
     await delay(5_000);
