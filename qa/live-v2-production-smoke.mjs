@@ -483,9 +483,12 @@ async function completeStripeTestCheckout(
   await page.goto(checkoutUrl, { waitUntil: "domcontentloaded", timeout: 60_000 });
   const emailInput = await visibleInput(page, ['input[type="email"]', 'input[name="email"]'], false);
   if (emailInput && !(await emailInput.inputValue())) await emailInput.fill(customerEmail);
-  await (await visibleInput(page, ['input[name="cardNumber"]', "#cardNumber"])).fill("4242424242424242");
-  await (await visibleInput(page, ['input[name="cardExpiry"]', "#cardExpiry"])).fill("1234");
-  await (await visibleInput(page, ['input[name="cardCvc"]', "#cardCvc"])).fill("123");
+  const cardNumber = await visibleInput(page, ['input[name="cardNumber"]', "#cardNumber"]);
+  const cardExpiry = await visibleInput(page, ['input[name="cardExpiry"]', "#cardExpiry"]);
+  const cardCvc = await visibleInput(page, ['input[name="cardCvc"]', "#cardCvc"]);
+  await typeStripeField(cardNumber, "4242 4242 4242 4242");
+  await typeStripeField(cardExpiry, "12 / 34");
+  await typeStripeField(cardCvc, "123");
   const name = await visibleInput(page, ['input[name="billingName"]', 'input[autocomplete="name"]'], false);
   if (name) await name.fill("Souk Capture V2 QA");
   const postal = await visibleInput(page, [
@@ -493,6 +496,12 @@ async function completeStripeTestCheckout(
     'input[autocomplete="postal-code"]',
   ], false);
   if (postal) await postal.fill("10001");
+  event("stripe-fields-filled", {
+    cardNumber: Boolean(await cardNumber.inputValue()),
+    cardExpiry: Boolean(await cardExpiry.inputValue()),
+    cardCvc: Boolean(await cardCvc.inputValue()),
+    postal: postal ? Boolean(await postal.inputValue()) : null,
+  });
   const submit = page.locator('button[type="submit"]:visible').last();
   if (await submit.count()) await submit.click();
   else await page.getByRole("button", { name: /pay|payer/i }).last().click();
@@ -566,6 +575,12 @@ async function visibleInput(page, selectors, required = true) {
   }
   if (required) throw new Error(`Stripe field unavailable: ${selectors.join(", ")}`);
   return null;
+}
+
+async function typeStripeField(locator, value) {
+  await locator.click();
+  await locator.press(process.platform === "darwin" ? "Meta+A" : "Control+A");
+  await locator.pressSequentially(value, { delay: 25 });
 }
 
 function event(phase, payload = {}) {
