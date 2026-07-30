@@ -153,7 +153,10 @@ try {
   await sourcePage.goto(sourceUrl, { waitUntil: "domcontentloaded", timeout: 60_000 });
   await settlePage(sourcePage);
   await captureEvidence(sourcePage, join(evidenceDirectory, "03-fancypalas-source-home.png"));
-  const catalogSamples = await readCatalogSamples(sourcePage);
+  const catalogSamples = await readCatalogSamples(
+    sourcePage,
+    discovered.run?.observations || [],
+  );
 
   await landing.bringToFront();
   await landing.reload({ waitUntil: "networkidle", timeout: 60_000 });
@@ -399,25 +402,47 @@ async function qualifyDeployedStorefront(browserContext, deploymentUrl, samples,
   await page.close();
 }
 
-async function readCatalogSamples(page) {
+async function readCatalogSamples(page, observations = []) {
+  const canonicalOrigin = new URL(page.url()).origin;
   const productsResponse = await page.context().request.get(
-    `${new URL(sourceUrl).origin}/products.json?limit=20`,
+    `${canonicalOrigin}/products.json?limit=20`,
     { timeout: 30_000 },
   );
   const collectionsResponse = await page.context().request.get(
-    `${new URL(sourceUrl).origin}/collections.json?limit=20`,
+    `${canonicalOrigin}/collections.json?limit=20`,
     { timeout: 30_000 },
   );
-  const products = productsResponse.ok() ? (await productsResponse.json()).products || [] : [];
-  const collections = collectionsResponse.ok() ? (await collectionsResponse.json()).collections || [] : [];
-  assert.ok(products[0]?.handle && products[0]?.title, "FancyPalas must expose a sample product.");
-  assert.ok(collections[0]?.handle, "FancyPalas must expose a sample collection.");
+  const products = productsResponse.ok()
+    ? (await productsResponse.json().catch(() => ({}))).products || []
+    : [];
+  const collections = collectionsResponse.ok()
+    ? (await collectionsResponse.json().catch(() => ({}))).collections || []
+    : [];
+  const productObservation = observations.find((entry) =>
+    entry.kind === "product" && entry.state === "default" && entry.url);
+  const collectionObservation = observations.find((entry) =>
+    entry.kind === "listing" && entry.state === "default" && /\/collections\//.test(entry.url || ""));
+  const productHandle = products[0]?.handle || pathHandle(productObservation?.url, "products");
+  const productTitle = products[0]?.title || productObservation?.title;
+  const collectionHandle = collections[0]?.handle || pathHandle(collectionObservation?.url, "collections");
+  assert.ok(productHandle && productTitle, "FancyPalas must expose a sample product.");
+  assert.ok(collectionHandle, "FancyPalas must expose a sample collection.");
   return {
-    productHandle: products[0].handle,
-    productTitle: products[0].title,
-    collectionHandle: collections[0].handle,
-    query: String(products[0].title).split(/\s+/)[0],
+    productHandle,
+    productTitle,
+    collectionHandle,
+    query: String(productTitle).split(/\s+/)[0],
   };
+}
+
+function pathHandle(input, segment) {
+  try {
+    const parts = new URL(input).pathname.split("/").filter(Boolean);
+    const index = parts.indexOf(segment);
+    return index >= 0 ? parts[index + 1] || "" : "";
+  } catch {
+    return "";
+  }
 }
 
 async function settlePage(page) {
