@@ -78,6 +78,28 @@ jobs:
             },
           );
           console.log(JSON.stringify(result));
+          let deployment = result.deployment;
+          for (let attempt = 0; attempt < 120 && deployment.status !== "READY"; attempt += 1) {
+            if (["ERROR", "CANCELED"].includes(deployment.status)) {
+              throw new Error(`Capture V2 deployment failed: ${JSON.stringify(deployment)}`);
+            }
+            await new Promise((resolve) => setTimeout(resolve, 5_000));
+            deployment = (await request(
+              `/api/capture-v2/projects/${encodeURIComponent(project.project.id)}/deployment/vercel`,
+              {
+                method: "POST",
+                headers: { authorization: `Bearer ${registration.token}` },
+                body: JSON.stringify({
+                  target: "capture-v2-app-status",
+                  deploymentId: result.deployment.id,
+                }),
+              },
+            )).deployment;
+            console.log(JSON.stringify({ deployment }));
+          }
+          if (deployment.status !== "READY") {
+            throw new Error(`Capture V2 deployment timed out: ${JSON.stringify(deployment)}`);
+          }
           JS
           for attempt in $(seq 1 90)
           do
