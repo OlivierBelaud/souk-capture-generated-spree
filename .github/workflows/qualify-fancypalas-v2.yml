@@ -17,6 +17,7 @@ concurrency:
 
 jobs:
   qualify:
+    # This deliberately qualifies the deployed API and app, not local substitutes.
     name: Extension → payment → Next → Vercel
     runs-on: ubuntu-latest
     timeout-minutes: 90
