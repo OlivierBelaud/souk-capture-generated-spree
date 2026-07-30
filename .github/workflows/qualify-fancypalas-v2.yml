@@ -47,7 +47,7 @@ jobs:
         run: |
           mkdir -p artifacts/evidence
           install -m 0644 qa/souk-capture-extension-v2.zip "$SOUK_V2_LIVE_EXTENSION_ARCHIVE"
-          unzip -p "$SOUK_V2_LIVE_EXTENSION_ARCHIVE" background.mjs |
+          unzip -p "$SOUK_V2_LIVE_EXTENSION_ARCHIVE" background.js |
             grep -q "canonicalDiscoveryTarget"
 
       - name: Run deployed FancyPalas V2 qualification
