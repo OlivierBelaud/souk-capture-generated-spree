@@ -43,6 +43,20 @@ jobs:
       - name: Download deployed V2 extension
         run: |
           mkdir -p artifacts/evidence
+          for candidate in \
+            "https://capture-v2.wearesouk.com" \
+            "https://souk-capture-v2.vercel.app" \
+            "$SOUK_V2_LIVE_APP_ORIGIN"
+          do
+            echo "=== $candidate ==="
+            curl --location --compressed --silent --show-error \
+              --dump-header /tmp/candidate-headers.txt \
+              "$candidate/souk-capture-extension-v2.zip" \
+              --output /tmp/candidate-body.bin || true
+            cat /tmp/candidate-headers.txt || true
+            stat -c '%s bytes' /tmp/candidate-body.bin || true
+            xxd -l 32 /tmp/candidate-body.bin || true
+          done
           curl --fail --location --compressed --retry 5 --retry-all-errors \
             --dump-header artifacts/evidence/extension-response-headers.txt \
             "$SOUK_V2_LIVE_APP_ORIGIN/souk-capture-extension-v2.zip" \
