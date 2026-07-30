@@ -496,6 +496,7 @@ async function completeStripeTestCheckout(
     'input[autocomplete="postal-code"]',
   ], false);
   if (postal) await postal.fill("10001");
+  await fillRequiredStripeFields(page, customerEmail);
   event("stripe-fields-filled", {
     cardNumber: Boolean(await cardNumber.inputValue()),
     cardExpiry: Boolean(await cardExpiry.inputValue()),
@@ -522,6 +523,7 @@ async function completeStripeTestCheckout(
   } else {
     event("stripe-submit-pending", {
       url: returned.origin + returned.pathname,
+      invalidFields: await invalidStripeFields(page),
       errors: await page.locator(
         '[role="alert"], [data-testid*="error" i], [class*="error" i]',
       ).allInnerTexts().catch(() => []),
@@ -581,6 +583,68 @@ async function typeStripeField(locator, value) {
   await locator.click();
   await locator.press(process.platform === "darwin" ? "Meta+A" : "Control+A");
   await locator.pressSequentially(value, { delay: 25 });
+}
+
+async function fillRequiredStripeFields(page, customerEmail) {
+  for (const frame of page.frames()) {
+    const controls = frame.locator("input:visible, select:visible, textarea:visible");
+    for (let index = 0; index < await controls.count(); index += 1) {
+      const control = controls.nth(index);
+      const details = await control.evaluate((element) => ({
+        tagName: element.tagName.toLowerCase(),
+        type: element.getAttribute("type") || "",
+        descriptor: [
+          element.getAttribute("name"),
+          element.id,
+          element.getAttribute("autocomplete"),
+          element.getAttribute("aria-label"),
+          element.getAttribute("placeholder"),
+        ].filter(Boolean).join(" "),
+        required: element.required || element.getAttribute("aria-required") === "true",
+        value: element.value || "",
+      })).catch(() => null);
+      if (!details?.required || details.value) continue;
+      const descriptor = details.descriptor.toLowerCase();
+      if (details.type === "checkbox") {
+        await control.check();
+      } else if (details.tagName === "select") {
+        const options = await control.locator("option").evaluateAll((nodes) =>
+          nodes.map((node) => ({ label: node.textContent?.trim() || "", value: node.value }))
+            .filter((option) => option.value));
+        const preferred = options.find((option) => /united states|portugal/i.test(option.label)) || options[0];
+        if (preferred) await control.selectOption(preferred.value);
+      } else if (/e-?mail/.test(descriptor)) {
+        await control.fill(customerEmail);
+      } else if (/postal|zip/.test(descriptor)) {
+        await control.fill("10001");
+      } else if (/phone|tel/.test(descriptor)) {
+        await control.fill("2125550100");
+      } else if (/address.*(?:line.?1)?|line.?1/.test(descriptor)) {
+        await control.fill("123 Broadway");
+      } else if (/city|locality|town/.test(descriptor)) {
+        await control.fill("New York");
+      } else if (/state|province|region/.test(descriptor)) {
+        await control.fill("New York");
+      } else {
+        await control.fill("Souk Capture V2 QA");
+      }
+    }
+  }
+}
+
+async function invalidStripeFields(page) {
+  const fields = [];
+  for (const frame of page.frames()) {
+    fields.push(...await frame.locator("input:invalid, select:invalid, textarea:invalid")
+      .evaluateAll((nodes) => nodes.map((element) => ({
+        type: element.getAttribute("type") || element.tagName.toLowerCase(),
+        name: element.getAttribute("name") || "",
+        id: element.id || "",
+        autocomplete: element.getAttribute("autocomplete") || "",
+        ariaLabel: element.getAttribute("aria-label") || "",
+      }))).catch(() => []));
+  }
+  return fields;
 }
 
 function event(phase, payload = {}) {
