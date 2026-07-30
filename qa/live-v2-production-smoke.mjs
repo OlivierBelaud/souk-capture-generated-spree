@@ -483,8 +483,15 @@ async function completeStripeTestCheckout(page, checkoutUrl, customerEmail, proj
     'input[autocomplete="postal-code"]',
   ], false);
   if (postal) await postal.fill("10001");
-  await page.getByRole("button", { name: /pay|payer/i }).click();
-  await page.waitForURL(/\/studio-v2\?.*session_id=cs_test_/, { timeout: 90_000 });
+  const submit = page.locator('button[type="submit"]:visible').last();
+  if (await submit.count()) await submit.click();
+  else await page.getByRole("button", { name: /pay|payer/i }).last().click();
+  await page.waitForURL((url) =>
+    url.pathname === "/studio-v2" &&
+    /^cs_test_/.test(url.searchParams.get("session_id") || ""), {
+    timeout: 90_000,
+    waitUntil: "commit",
+  });
   const returned = new URL(page.url());
   assert.equal(returned.searchParams.get("project"), projectId);
   const sessionId = returned.searchParams.get("session_id") || "";
