@@ -124,6 +124,14 @@ try {
   event("discovery-started", { projectId, runId: started.run.id });
 
   const discovered = await waitForDiscovery(projectId, token);
+  event("discovery-result", {
+    projectId,
+    status: discovered.status,
+    captureCount: discovered.captureCount,
+    catalog: discovered.catalog || null,
+    observations: discovered.run?.observations || [],
+    warnings: discovered.run?.warnings || [],
+  });
   assert.ok(discovered.catalog, "FancyPalas must expose a local Shopify catalog.");
   assert.ok(discovered.catalog.productCount > 0, "The local catalog must contain products.");
   assert.ok(discovered.catalog.collectionCount > 0, "The local catalog must contain collections.");
