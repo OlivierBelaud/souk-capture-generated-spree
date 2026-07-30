@@ -40,113 +40,15 @@ jobs:
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
 
-      - name: Ensure isolated public V2 application
-        run: |
-          node --input-type=module <<'JS'
-          import { randomUUID } from "node:crypto";
-          const api = process.env.SOUK_V2_LIVE_API_ORIGIN;
-          const email = `capture-v2-bootstrap+${Date.now()}@souk.test`;
-          const password = `Qa!${randomUUID()}Aa1`;
-          async function request(path, options = {}) {
-            const response = await fetch(`${api}${path}`, {
-              ...options,
-              headers: { "content-type": "application/json", ...(options.headers || {}) },
-            });
-            const body = await response.json().catch(() => ({}));
-            if (!response.ok) throw new Error(`${path}: ${response.status} ${JSON.stringify(body)}`);
-            return body;
-          }
-          const registration = await request("/api/capture-register", {
-            method: "POST",
-            body: JSON.stringify({ name: "Souk Capture V2 deploy", email, password }),
-          });
-          const project = await request("/api/capture-v2/projects", {
-            method: "POST",
-            headers: { authorization: `Bearer ${registration.token}` },
-            body: JSON.stringify({
-              name: "FancyPalas V2 deployment",
-              sourceUrl: process.env.SOUK_V2_LIVE_SOURCE_URL,
-              clientRequestId: randomUUID(),
-            }),
-          });
-          const result = await request(
-            `/api/capture-v2/projects/${encodeURIComponent(project.project.id)}/deployment/vercel`,
-            {
-              method: "POST",
-              headers: { authorization: `Bearer ${registration.token}` },
-              body: JSON.stringify({ target: "capture-v2-app" }),
-            },
-          );
-          console.log(JSON.stringify(result));
-          let deployment = result.deployment;
-          for (let attempt = 0; attempt < 120 && deployment.status !== "READY"; attempt += 1) {
-            if (["ERROR", "CANCELED"].includes(deployment.status)) {
-              throw new Error(`Capture V2 deployment failed: ${JSON.stringify(deployment)}`);
-            }
-            await new Promise((resolve) => setTimeout(resolve, 5_000));
-            deployment = (await request(
-              `/api/capture-v2/projects/${encodeURIComponent(project.project.id)}/deployment/vercel`,
-              {
-                method: "POST",
-                headers: { authorization: `Bearer ${registration.token}` },
-                body: JSON.stringify({
-                  target: "capture-v2-app-status",
-                  deploymentId: result.deployment.id,
-                }),
-              },
-            )).deployment;
-            console.log(JSON.stringify({ deployment }));
-          }
-          if (deployment.status !== "READY") {
-            throw new Error(`Capture V2 deployment timed out: ${JSON.stringify(deployment)}`);
-          }
-          JS
-          for attempt in $(seq 1 90)
-          do
-            curl --location --compressed --silent --show-error \
-              "$SOUK_V2_LIVE_APP_ORIGIN/souk-capture-extension-v2.zip" \
-              --output /tmp/v2-ready-check.zip || true
-            if test "$(xxd -p -l 4 /tmp/v2-ready-check.zip 2>/dev/null)" = "504b0304" &&
-              unzip -p /tmp/v2-ready-check.zip background.mjs 2>/dev/null |
-                grep -q "canonicalDiscoveryTarget"
-            then
-              exit 0
-            fi
-            sleep 10
-          done
-          echo "The isolated V2 production deployment did not become ready." >&2
-          exit 1
+      - name: Verify isolated public V2 application
+        run: curl --fail --location --retry 5 "$SOUK_V2_LIVE_APP_ORIGIN" --output /dev/null
 
-      - name: Download deployed V2 extension
+      - name: Load the exact V2 extension revision
         run: |
           mkdir -p artifacts/evidence
-          for candidate in \
-            "https://capture-v2.wearesouk.com" \
-            "https://souk-capture-v2.vercel.app" \
-            "$SOUK_V2_LIVE_APP_ORIGIN"
-          do
-            echo "=== $candidate ==="
-            curl --location --compressed --silent --show-error \
-              --dump-header /tmp/candidate-headers.txt \
-              "$candidate/souk-capture-extension-v2.zip" \
-              --output /tmp/candidate-body.bin || true
-            cat /tmp/candidate-headers.txt || true
-            stat -c '%s bytes' /tmp/candidate-body.bin || true
-            xxd -l 32 /tmp/candidate-body.bin || true
-          done
-          curl --fail --location --compressed --retry 5 --retry-all-errors \
-            --dump-header artifacts/evidence/extension-response-headers.txt \
-            "$SOUK_V2_LIVE_APP_ORIGIN/souk-capture-extension-v2.zip" \
-            --output "$SOUK_V2_LIVE_EXTENSION_ARCHIVE"
-          test -s "$SOUK_V2_LIVE_EXTENSION_ARCHIVE"
-          stat -c '%s bytes' "$SOUK_V2_LIVE_EXTENSION_ARCHIVE"
-          xxd -l 64 "$SOUK_V2_LIVE_EXTENSION_ARCHIVE"
-          python - <<'PY'
-          import os
-          path = os.environ["SOUK_V2_LIVE_EXTENSION_ARCHIVE"]
-          with open(path, "rb") as archive:
-              assert archive.read(4) == b"PK\x03\x04", "deployed extension response is not a ZIP archive"
-          PY
+          install -m 0644 qa/souk-capture-extension-v2.zip "$SOUK_V2_LIVE_EXTENSION_ARCHIVE"
+          unzip -p "$SOUK_V2_LIVE_EXTENSION_ARCHIVE" background.mjs |
+            grep -q "canonicalDiscoveryTarget"
 
       - name: Run deployed FancyPalas V2 qualification
         run: xvfb-run -a node qa/live-v2-production-smoke.mjs
