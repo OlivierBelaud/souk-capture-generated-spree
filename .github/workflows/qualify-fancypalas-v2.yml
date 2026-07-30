@@ -6,6 +6,7 @@ on:
     paths:
       - ".github/workflows/qualify-fancypalas-v2.yml"
       - "qa/live-v2-production-smoke.mjs"
+      - "qa/souk-capture-extension-v2.zip"
 
 permissions:
   contents: read
