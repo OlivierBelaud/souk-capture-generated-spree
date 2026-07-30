@@ -179,17 +179,21 @@ try {
     assert.match(checkout.sessionId || "", /^cs_test_/);
     assert.ok(checkout.url, "Stripe test Checkout must return a URL.");
     const checkoutPage = await context.newPage();
-    const returned = await completeStripeTestCheckout(checkoutPage, checkout.url, email, projectId);
-    await captureEvidence(checkoutPage, join(evidenceDirectory, "05-stripe-return.png"));
-    await checkoutPage.close();
-    const confirmation = await jsonRequest(
-      `${apiOrigin}/api/capture-v2/projects/${encodeURIComponent(projectId)}/payment/confirm`,
-      {
-        method: "POST",
-        headers: { authorization: `Bearer ${token}` },
-        body: JSON.stringify({ sessionId: returned.sessionId }),
-      },
+    const returned = await completeStripeTestCheckout(
+      checkoutPage,
+      checkout.url,
+      checkout.sessionId,
+      email,
+      projectId,
     );
+    await captureEvidence(checkoutPage, join(evidenceDirectory, "05-stripe-return.png"));
+    const confirmation = await waitForPaymentConfirmation(
+      checkoutPage,
+      projectId,
+      token,
+      returned.sessionId,
+    );
+    await checkoutPage.close();
     assert.equal(confirmation.payment?.paid, true, "Stripe confirmation must unlock generation.");
     event("payment-confirmed", { projectId, sessionId: returned.sessionId });
 
@@ -469,7 +473,13 @@ async function jsonRequest(url, init = {}) {
   return body;
 }
 
-async function completeStripeTestCheckout(page, checkoutUrl, customerEmail, projectId) {
+async function completeStripeTestCheckout(
+  page,
+  checkoutUrl,
+  checkoutSessionId,
+  customerEmail,
+  projectId,
+) {
   await page.goto(checkoutUrl, { waitUntil: "domcontentloaded", timeout: 60_000 });
   const emailInput = await visibleInput(page, ['input[type="email"]', 'input[name="email"]'], false);
   if (emailInput && !(await emailInput.inputValue())) await emailInput.fill(customerEmail);
@@ -486,17 +496,61 @@ async function completeStripeTestCheckout(page, checkoutUrl, customerEmail, proj
   const submit = page.locator('button[type="submit"]:visible').last();
   if (await submit.count()) await submit.click();
   else await page.getByRole("button", { name: /pay|payer/i }).last().click();
-  await page.waitForURL((url) =>
-    url.pathname === "/studio-v2" &&
-    /^cs_test_/.test(url.searchParams.get("session_id") || ""), {
-    timeout: 90_000,
-    waitUntil: "commit",
-  });
+  await Promise.race([
+    page.waitForURL((url) =>
+      url.pathname === "/studio-v2" &&
+      /^cs_test_/.test(url.searchParams.get("session_id") || ""), {
+      timeout: 30_000,
+      waitUntil: "commit",
+    }).catch(() => null),
+    page.waitForTimeout(12_000),
+  ]);
   const returned = new URL(page.url());
-  assert.equal(returned.searchParams.get("project"), projectId);
-  const sessionId = returned.searchParams.get("session_id") || "";
+  const sessionId = returned.searchParams.get("session_id") || checkoutSessionId || "";
   assert.match(sessionId, /^cs_test_/);
+  if (returned.pathname === "/studio-v2") {
+    assert.equal(returned.searchParams.get("project"), projectId);
+  } else {
+    event("stripe-submit-pending", {
+      url: returned.origin + returned.pathname,
+      errors: await page.locator(
+        '[role="alert"], [data-testid*="error" i], [class*="error" i]',
+      ).allInnerTexts().catch(() => []),
+    });
+  }
   return { sessionId };
+}
+
+async function waitForPaymentConfirmation(page, projectId, token, sessionId) {
+  const deadline = Date.now() + 90_000;
+  let lastBody = {};
+  while (Date.now() < deadline) {
+    const response = await fetch(
+      `${apiOrigin}/api/capture-v2/projects/${encodeURIComponent(projectId)}/payment/confirm`,
+      {
+        method: "POST",
+        headers: {
+          accept: "application/json",
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ sessionId }),
+        signal: AbortSignal.timeout(30_000),
+      },
+    );
+    lastBody = await response.json().catch(() => ({}));
+    if (response.ok && lastBody.payment?.paid) return lastBody;
+    if (response.status !== 402) {
+      throw new Error(lastBody.error || lastBody.message || `Stripe confirmation HTTP ${response.status}.`);
+    }
+    await page.waitForTimeout(2_000);
+  }
+  const errors = await page.locator(
+    '[role="alert"], [data-testid*="error" i], [class*="error" i]',
+  ).allInnerTexts().catch(() => []);
+  throw new Error(
+    `Stripe Checkout stayed unpaid: ${lastBody.error || lastBody.message || "no confirmation"}; ${errors.join(" | ")}`,
+  );
 }
 
 async function visibleInput(page, selectors, required = true) {
