@@ -72,10 +72,7 @@ try {
   });
   assert.ok(landingResponse && landingResponse.status() < 400, "The V2 landing page must be public.");
   await landing.getByRole("heading", { name: /Set your storefront free/i }).waitFor();
-  await landing.screenshot({
-    path: join(evidenceDirectory, "01-v2-landing-full.png"),
-    fullPage: true,
-  });
+  await captureEvidence(landing, join(evidenceDirectory, "01-v2-landing-full.png"));
 
   await landing.goto(
     `${appOrigin}/studio-v2?project=${encodeURIComponent(projectId)}`,
@@ -87,10 +84,7 @@ try {
   }, { accessToken: token, refreshToken: registration.refreshToken || "" });
   await landing.reload({ waitUntil: "networkidle", timeout: 60_000 });
   await landing.getByRole("heading", { name: created.project.name }).waitFor({ timeout: 30_000 });
-  await landing.screenshot({
-    path: join(evidenceDirectory, "02-v2-studio-before-capture.png"),
-    fullPage: true,
-  });
+  await captureEvidence(landing, join(evidenceDirectory, "02-v2-studio-before-capture.png"));
 
   const ping = await extensionMessage(landing, extensionId, { type: "SOUK_V2_PING" });
   assert.equal(ping.installed, true, "The deployed studio must be allowed to contact the V2 extension.");
@@ -158,18 +152,12 @@ try {
     .find((page) => page.url().startsWith(new URL(sourceUrl).origin)) || await context.newPage();
   await sourcePage.goto(sourceUrl, { waitUntil: "domcontentloaded", timeout: 60_000 });
   await settlePage(sourcePage);
-  await sourcePage.screenshot({
-    path: join(evidenceDirectory, "03-fancypalas-source-home.png"),
-    fullPage: true,
-  });
+  await captureEvidence(sourcePage, join(evidenceDirectory, "03-fancypalas-source-home.png"));
   const catalogSamples = await readCatalogSamples(sourcePage);
 
   await landing.bringToFront();
   await landing.reload({ waitUntil: "networkidle", timeout: 60_000 });
-  await landing.screenshot({
-    path: join(evidenceDirectory, "04-v2-studio-after-capture.png"),
-    fullPage: true,
-  });
+  await captureEvidence(landing, join(evidenceDirectory, "04-v2-studio-after-capture.png"));
 
   let deployment = null;
   let generation = null;
@@ -189,10 +177,7 @@ try {
     assert.ok(checkout.url, "Stripe test Checkout must return a URL.");
     const checkoutPage = await context.newPage();
     const returned = await completeStripeTestCheckout(checkoutPage, checkout.url, email, projectId);
-    await checkoutPage.screenshot({
-      path: join(evidenceDirectory, "05-stripe-return.png"),
-      fullPage: true,
-    }).catch(() => undefined);
+    await captureEvidence(checkoutPage, join(evidenceDirectory, "05-stripe-return.png"));
     await checkoutPage.close();
     const confirmation = await jsonRequest(
       `${apiOrigin}/api/capture-v2/projects/${encodeURIComponent(projectId)}/payment/confirm`,
@@ -274,6 +259,24 @@ try {
 } finally {
   await context?.close().catch(() => undefined);
   if (!artifactDirectory) rmSync(temporaryRoot, { recursive: true, force: true });
+}
+
+async function captureEvidence(page, path) {
+  try {
+    await page.screenshot({ path, fullPage: true });
+  } catch (error) {
+    event("screenshot-retry", {
+      path,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    await delay(750);
+    await page.screenshot({ path, fullPage: false }).catch((retryError) => {
+      event("screenshot-skipped", {
+        path,
+        error: retryError instanceof Error ? retryError.message : String(retryError),
+      });
+    });
+  }
 }
 
 function extractExtension(archive, destinationRoot) {
@@ -376,10 +379,7 @@ async function qualifyDeployedStorefront(browserContext, deploymentUrl, samples,
     });
     assert.ok(response && response.status() < 400, `Generated ${label} route must return HTTP 2xx/3xx.`);
     assert.ok((await page.locator("body").innerText()).trim().length > 40, `Generated ${label} route must render content.`);
-    await page.screenshot({
-      path: join(evidenceRoot, `generated-${label}.png`),
-      fullPage: true,
-    });
+    await captureEvidence(page, join(evidenceRoot, `generated-${label}.png`));
   }
 
   await page.goto(`${deploymentUrl}/products/${encodeURIComponent(samples.productHandle)}`, {
