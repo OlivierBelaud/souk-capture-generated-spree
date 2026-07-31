@@ -155,9 +155,11 @@ try {
     warnings: discovered.run?.warnings || [],
   });
 
+  const capturedHomeUrl = (discovered.run?.observations || [])
+    .find((entry) => entry.kind === "home" && entry.state === "default")?.url || sourceUrl;
   const sourcePage = context.pages()
-    .find((page) => page.url().startsWith(new URL(sourceUrl).origin)) || await context.newPage();
-  await sourcePage.goto(sourceUrl, { waitUntil: "domcontentloaded", timeout: 60_000 });
+    .find((page) => page.url().startsWith(new URL(capturedHomeUrl).origin)) || await context.newPage();
+  await sourcePage.goto(capturedHomeUrl, { waitUntil: "domcontentloaded", timeout: 60_000 });
   await settlePage(sourcePage);
   await captureEvidence(sourcePage, join(evidenceDirectory, "03-fancypalas-source-home.png"));
   const extensionPopup = await context.newPage();
