@@ -50,7 +50,7 @@ jobs:
       - name: Load the exact V2 extension revision
         run: |
           mkdir -p artifacts/evidence
-          curl --fail --location --retry 5 "https://raw.githubusercontent.com/OlivierBelaud/souk-capture/dev/v2/apps/frontend/public/souk-capture-extension-v2.zip" --output "$SOUK_V2_LIVE_EXTENSION_ARCHIVE"
+          base64 --decode qa/souk-capture-extension-v2.zip.b64 > "$SOUK_V2_LIVE_EXTENSION_ARCHIVE"
           unzip -p "$SOUK_V2_LIVE_EXTENSION_ARCHIVE" background.js > artifacts/evidence/extension-background.js
           grep -q "canonicalDiscoveryTarget" artifacts/evidence/extension-background.js
           grep -q "isMissingStorefrontDocument" artifacts/evidence/extension-background.js
