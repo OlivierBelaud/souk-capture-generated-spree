@@ -28,7 +28,7 @@ mkdirSync(evidenceDirectory, { recursive: true });
 
 let context;
 try {
-  event("qualification-revision", { revision: "replay-domcontentloaded-v3" });
+  event("qualification-revision", { revision: "captured-state-commerce-v4" });
   const registration = await jsonRequest(`${apiOrigin}/api/capture-register`, {
     method: "POST",
     body: JSON.stringify({ name: "Souk Capture V2 QA", email, password }),
@@ -452,6 +452,29 @@ async function qualifyDeployedStorefront(browserContext, deploymentUrl, samples,
   await cartSurface.waitFor({ state: "visible", timeout: 20_000 });
   await page.goto(`${deploymentUrl}/cart`, { waitUntil: "networkidle", timeout: 60_000 });
   assert.match(await page.locator("body").innerText(), new RegExp(escapeRegExp(samples.productTitle), "i"));
+  if (samples.capturedProductHandle) {
+    await page.goto(
+      `${deploymentUrl}/products/${encodeURIComponent(samples.capturedProductHandle)}`,
+      { waitUntil: "networkidle", timeout: 60_000 },
+    );
+    const dismiss = page.locator('button,[role="button"],a').filter({
+      hasText: /no thanks|not now|dismiss/i,
+    }).first();
+    if (await dismiss.isVisible().catch(() => false)) await dismiss.click();
+    const capturedAddToCart = page.locator('[data-souk-actions~="add-to-cart"]').first();
+    await capturedAddToCart.waitFor({ state: "visible", timeout: 20_000 });
+    await capturedAddToCart.click();
+    await page.getByRole("dialog", { name: /shopping cart/i }).waitFor({
+      state: "visible",
+      timeout: 20_000,
+    });
+    await captureEvidence(page, join(evidenceRoot, "generated-captured-product-cart.png"));
+    await page.goto(`${deploymentUrl}/cart`, { waitUntil: "networkidle", timeout: 60_000 });
+    assert.match(
+      await page.locator("body").innerText(),
+      new RegExp(escapeRegExp(samples.capturedProductTitle), "i"),
+    );
+  }
   assert.deepEqual(errors, [], `Generated storefront emitted browser errors: ${errors.join(" | ")}`);
   await page.close();
 }
@@ -478,12 +501,17 @@ async function readCatalogSamples(page, observations = []) {
     entry.kind === "listing" && entry.state === "default" && /\/collections\//.test(entry.url || ""));
   const productHandle = products[0]?.handle || pathHandle(productObservation?.url, "products");
   const productTitle = products[0]?.title || productObservation?.title;
+  const capturedProductHandle = pathHandle(productObservation?.url, "products");
+  const capturedProductTitle = products.find((product) =>
+    product.handle === capturedProductHandle)?.title || productObservation?.title || "";
   const collectionHandle = collections[0]?.handle || pathHandle(collectionObservation?.url, "collections");
   assert.ok(productHandle && productTitle, "FancyPalas must expose a sample product.");
   assert.ok(collectionHandle, "FancyPalas must expose a sample collection.");
   return {
     productHandle,
     productTitle,
+    capturedProductHandle,
+    capturedProductTitle,
     collectionHandle,
     query: String(productTitle).split(/\s+/)[0],
   };
