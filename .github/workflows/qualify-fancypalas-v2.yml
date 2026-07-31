@@ -1,0 +1,89 @@
+name: Qualify FancyPalas V2
+# bounded-core-template-budget: 180s
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/qualify-fancypalas-v2.yml"
+      - "qa/live-v2-production-smoke.mjs"
+      - "qa/souk-capture-extension-v2.zip"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qualify-fancypalas-v2-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  qualify:
+    # This deliberately qualifies the deployed API and app, not local substitutes.
+    name: Extension → payment → Next → Vercel
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      SOUK_V2_LIVE_API_ORIGIN: https://api.wearesouk.com
+      SOUK_V2_LIVE_APP_ORIGIN: https://souk-capture-v2.vercel.app
+      SOUK_V2_LIVE_SOURCE_URL: https://fancypalas.com/
+      SOUK_V2_LIVE_EXTENSION_ARCHIVE: ${{ github.workspace }}/artifacts/souk-capture-extension-v2.zip
+      SOUK_V2_LIVE_ARTIFACT_DIR: ${{ github.workspace }}/artifacts/evidence
+      SOUK_V2_LIVE_PAY_GENERATE_DEPLOY: "true"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Verify isolated public V2 application
+        run: |
+          curl --fail --location --retry 5 "$SOUK_V2_LIVE_APP_ORIGIN" --output artifacts-v2-landing.html
+          test -s artifacts-v2-landing.html
+
+      - name: Install QA dependencies
+        run: npm install --no-save --legacy-peer-deps playwright@1.60.0 fflate@0.8.3
+
+      - name: Install Chromium
+        run: npx playwright install chromium
+
+      - name: Load the exact V2 extension revision
+        run: |
+          mkdir -p artifacts/evidence
+          base64 --decode qa/souk-capture-extension-v2.zip.b64 > "$SOUK_V2_LIVE_EXTENSION_ARCHIVE"
+          unzip -p "$SOUK_V2_LIVE_EXTENSION_ARCHIVE" background.js > artifacts/evidence/extension-background.js
+          grep -q "canonicalDiscoveryTarget" artifacts/evidence/extension-background.js
+          grep -q "isMissingStorefrontDocument" artifacts/evidence/extension-background.js
+          grep -q "discoveryDeadlineAt" artifacts/evidence/extension-background.js
+          grep -q "Add current page as a template" <(unzip -p "$SOUK_V2_LIVE_EXTENSION_ARCHIVE" popup.mjs)
+          if grep -q 'state.origin}/pages/wishlist' artifacts/evidence/extension-background.js; then
+            echo "Stale hardcoded wishlist seed found in extension binary" >&2
+            exit 1
+          fi
+          sha256sum "$SOUK_V2_LIVE_EXTENSION_ARCHIVE" > artifacts/evidence/extension-sha256.txt
+
+      - name: Run deployed FancyPalas V2 qualification
+        run: xvfb-run -a node qa/live-v2-production-smoke.mjs
+
+      - name: Publish qualification summary
+        if: always()
+        run: |
+          if test -f artifacts/evidence/qualification.json; then
+            {
+              echo "## FancyPalas V2 live qualification"
+              echo
+              echo '```json'
+              cat artifacts/evidence/qualification.json
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload screenshots, report and storefront bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fancypalas-v2-live-evidence
+          path: artifacts/evidence
+          if-no-files-found: warn
+          retention-days: 14
