@@ -334,6 +334,7 @@ async function waitForDiscovery(projectId, token) {
 async function waitForGeneration(projectId, token) {
   const deadline = Date.now() + 30 * 60_000;
   let generation;
+  let lastLogTail = "";
   while (Date.now() < deadline) {
     generation = (await jsonRequest(
       `${apiOrigin}/api/capture-v2/projects/${encodeURIComponent(projectId)}/generation`,
@@ -348,6 +349,11 @@ async function waitForGeneration(projectId, token) {
         ? { logTail: String(generation.log).slice(-8_000) }
         : {}),
     });
+    const runningLogTail = String(generation.log || "").slice(-1_600);
+    if (runningLogTail && runningLogTail !== lastLogTail) {
+      lastLogTail = runningLogTail;
+      event("generation-log", { logTail: runningLogTail });
+    }
     if (["succeeded", "review", "failed", "cancelled"].includes(generation.status)) return generation;
     await delay(5_000);
   }
