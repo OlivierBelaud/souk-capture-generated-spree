@@ -28,7 +28,7 @@ mkdirSync(evidenceDirectory, { recursive: true });
 
 let context;
 try {
-  event("qualification-revision", { revision: "static-assets-on-disk-v1" });
+  event("qualification-revision", { revision: "semantic-domcontentloaded-v1" });
   const registration = await jsonRequest(`${apiOrigin}/api/capture-register`, {
     method: "POST",
     body: JSON.stringify({ name: "Souk Capture V2 QA", email, password }),
@@ -208,6 +208,21 @@ try {
       },
     );
     generation = await waitForGeneration(projectId, token);
+    writeFileSync(
+      join(evidenceDirectory, "generation.json"),
+      `${JSON.stringify(generation, null, 2)}\n`,
+    );
+    if (["succeeded", "review"].includes(generation.status)) {
+      const bundle = await fetch(
+        `${apiOrigin}/api/capture-v2/projects/${encodeURIComponent(projectId)}/bundle?format=zip`,
+        {
+          headers: { authorization: `Bearer ${token}` },
+          signal: AbortSignal.timeout(5 * 60_000),
+        },
+      );
+      assert.equal(bundle.status, 200, "The paid V2 bundle must be downloadable.");
+      writeFileSync(join(evidenceDirectory, "storefront-v2.zip"), Buffer.from(await bundle.arrayBuffer()));
+    }
     assert.equal(
       generation.status,
       "succeeded",
@@ -219,16 +234,6 @@ try {
       phase: generation.phase,
       progress: generation.progress,
     });
-
-    const bundle = await fetch(
-      `${apiOrigin}/api/capture-v2/projects/${encodeURIComponent(projectId)}/bundle?format=zip`,
-      {
-        headers: { authorization: `Bearer ${token}` },
-        signal: AbortSignal.timeout(5 * 60_000),
-      },
-    );
-    assert.equal(bundle.status, 200, "The paid V2 bundle must be downloadable.");
-    writeFileSync(join(evidenceDirectory, "storefront-v2.zip"), Buffer.from(await bundle.arrayBuffer()));
 
     await jsonRequest(
       `${apiOrigin}/api/capture-v2/projects/${encodeURIComponent(projectId)}/deployment/vercel`,
