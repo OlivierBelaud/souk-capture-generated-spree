@@ -28,7 +28,7 @@ mkdirSync(evidenceDirectory, { recursive: true });
 
 let context;
 try {
-  event("qualification-revision", { revision: "embedded-documents-v6" });
+  event("qualification-revision", { revision: "theme-geometry-v7" });
   const registration = await jsonRequest(`${apiOrigin}/api/capture-register`, {
     method: "POST",
     body: JSON.stringify({ name: "Souk Capture V2 QA", email, password }),
