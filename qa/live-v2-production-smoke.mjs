@@ -332,7 +332,7 @@ async function waitForDiscovery(projectId, token) {
 }
 
 async function waitForGeneration(projectId, token) {
-  const deadline = Date.now() + 30 * 60_000;
+  const deadline = Date.now() + 20 * 60_000;
   let generation;
   let lastLogTail = "";
   while (Date.now() < deadline) {
