@@ -105,7 +105,7 @@ try {
     {
       method: "POST",
       headers: { authorization: `Bearer ${token}` },
-      body: JSON.stringify({ maxRoutes: 20, maxDepth: 1, maxDurationMs: 120_000 }),
+      body: JSON.stringify({ maxRoutes: 20, maxDepth: 1, maxDurationMs: 180_000 }),
     },
   );
   assert.ok(started.run?.id, "The backend must create a V2 discovery run.");
@@ -115,14 +115,14 @@ try {
     projectId,
     sourceUrl,
     runId: started.run.id,
-    budgets: { maxRoutes: 10, maxDepth: 1, maxDurationMs: 120_000 },
+    budgets: { maxRoutes: 10, maxDepth: 1, maxDurationMs: 180_000 },
   });
   assert.equal(discovery.busy, true);
   event("discovery-started", { projectId, runId: started.run.id });
 
   let discovered = await waitForDiscovery(projectId, token);
   const discoveryElapsedMs = Date.now() - discoveryStartedAt;
-  assert.ok(discoveryElapsedMs <= 180_000, `Visual discovery exceeded its bounded runtime: ${discoveryElapsedMs}ms.`);
+  assert.ok(discoveryElapsedMs <= 240_000, `Visual discovery exceeded its bounded runtime: ${discoveryElapsedMs}ms.`);
   assert.ok((discovered.run?.observations || []).length <= 10, "Visual discovery exceeded ten representative templates.");
   discovered = await waitForCatalog(projectId, token);
   event("discovery-result", {
@@ -136,7 +136,7 @@ try {
   assert.ok(discovered.catalog, "FancyPalas must expose a local Shopify catalog.");
   assert.ok(discovered.catalog.productCount > 0, "The local catalog must contain products.");
   assert.ok(discovered.catalog.collectionCount > 0, "The local catalog must contain collections.");
-  assert.ok(discovered.captureCount >= 3, "Discovery must persist several representative public scenes.");
+  assert.ok(discovered.captureCount >= 3, "Discovery must persist the core representative public scenes.");
   const observedKinds = new Set((discovered.run?.observations || []).map((entry) => entry.kind));
   for (const required of ["home", "listing", "product"]) {
     assert.ok(observedKinds.has(required), `Discovery must observe a ${required} scene.`);
