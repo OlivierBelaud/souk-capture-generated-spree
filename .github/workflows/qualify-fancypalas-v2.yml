@@ -1,4 +1,5 @@
 name: Qualify FancyPalas V2
+# bounded-core-template-budget: 180s
 
 on:
   pull_request:
