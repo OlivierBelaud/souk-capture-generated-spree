@@ -72,8 +72,18 @@ try {
     timeout: 60_000,
   });
   assert.ok(landingResponse && landingResponse.status() < 400, "The V2 landing page must be public.");
-  await landing.getByRole("heading", { name: /Set your storefront free/i }).waitFor();
+  const landingDiagnostics = {
+    requestedUrl: appOrigin,
+    finalUrl: landing.url(),
+    title: await landing.title(),
+    headings: await landing.locator("h1, h2").allTextContents(),
+  };
+  event("landing-loaded", landingDiagnostics);
   await captureEvidence(landing, join(evidenceDirectory, "01-v2-landing-full.png"));
+  assert.ok(
+    landingDiagnostics.headings.some((heading) => /Set your storefront free/i.test(heading)),
+    `The V2 landing heading is missing: ${JSON.stringify(landingDiagnostics)}`,
+  );
 
   await landing.goto(
     `${appOrigin}/studio-v2?project=${encodeURIComponent(projectId)}`,
