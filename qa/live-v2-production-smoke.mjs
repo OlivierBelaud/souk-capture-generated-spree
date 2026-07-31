@@ -72,18 +72,8 @@ try {
     timeout: 60_000,
   });
   assert.ok(landingResponse && landingResponse.status() < 400, "The V2 landing page must be public.");
-  const landingDiagnostics = {
-    requestedUrl: appOrigin,
-    finalUrl: landing.url(),
-    title: await landing.title(),
-    headings: await landing.locator("h1, h2").allTextContents(),
-  };
-  event("landing-loaded", landingDiagnostics);
+  await landing.getByRole("heading", { name: /Set your storefront free/i }).waitFor();
   await captureEvidence(landing, join(evidenceDirectory, "01-v2-landing-full.png"));
-  assert.ok(
-    landingDiagnostics.headings.some((heading) => /Set your storefront free/i.test(heading)),
-    `The V2 landing heading is missing: ${JSON.stringify(landingDiagnostics)}`,
-  );
 
   await landing.goto(
     `${appOrigin}/studio-v2?project=${encodeURIComponent(projectId)}`,
@@ -115,20 +105,26 @@ try {
     {
       method: "POST",
       headers: { authorization: `Bearer ${token}` },
-      body: JSON.stringify({ maxRoutes: 120, maxDepth: 4, maxDurationMs: 15 * 60_000 }),
+      body: JSON.stringify({ maxRoutes: 20, maxDepth: 1, maxDurationMs: 120_000 }),
     },
   );
   assert.ok(started.run?.id, "The backend must create a V2 discovery run.");
+  const discoveryStartedAt = Date.now();
   const discovery = await extensionMessage(landing, extensionId, {
     type: "SOUK_V2_START_DISCOVERY",
     projectId,
     sourceUrl,
     runId: started.run.id,
+    budgets: { maxRoutes: 10, maxDepth: 1, maxDurationMs: 120_000 },
   });
   assert.equal(discovery.busy, true);
   event("discovery-started", { projectId, runId: started.run.id });
 
-  const discovered = await waitForDiscovery(projectId, token);
+  let discovered = await waitForDiscovery(projectId, token);
+  const discoveryElapsedMs = Date.now() - discoveryStartedAt;
+  assert.ok(discoveryElapsedMs <= 180_000, `Visual discovery exceeded its bounded runtime: ${discoveryElapsedMs}ms.`);
+  assert.ok((discovered.run?.observations || []).length <= 10, "Visual discovery exceeded ten representative templates.");
+  discovered = await waitForCatalog(projectId, token);
   event("discovery-result", {
     projectId,
     status: discovered.status,
@@ -164,6 +160,21 @@ try {
   await sourcePage.goto(sourceUrl, { waitUntil: "domcontentloaded", timeout: 60_000 });
   await settlePage(sourcePage);
   await captureEvidence(sourcePage, join(evidenceDirectory, "03-fancypalas-source-home.png"));
+  const extensionPopup = await context.newPage();
+  await extensionPopup.goto(`chrome-extension://${extensionId}/popup.html`);
+  await sourcePage.bringToFront();
+  const manualReuse = await internalExtensionMessage(extensionPopup, {
+    type: "SOUK_V2_CAPTURE_CURRENT_TEMPLATE",
+  });
+  assert.equal(manualReuse.ok, true, `Manual template reuse failed: ${manualReuse.error || "unknown error"}`);
+  assert.equal(manualReuse.deduplicated, true, "Manual capture must reuse the already captured home template.");
+  await landing.bringToFront();
+  const crossOriginCapture = await internalExtensionMessage(extensionPopup, {
+    type: "SOUK_V2_CAPTURE_CURRENT_TEMPLATE",
+  });
+  assert.equal(crossOriginCapture.ok, false, "Manual capture must reject a tab outside the storefront origin.");
+  assert.match(crossOriginCapture.error || "", /outside|storefront origin/i);
+  await extensionPopup.close();
   const catalogSamples = await readCatalogSamples(
     sourcePage,
     discovered.run?.observations || [],
@@ -359,6 +370,15 @@ function extensionMessage(page, extensionId, message) {
   }), { targetId: extensionId, payload: message });
 }
 
+function internalExtensionMessage(extensionPage, message) {
+  return extensionPage.evaluate((payload) => new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage(payload, (response) => {
+      if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
+      else resolve(response);
+    });
+  }), message);
+}
+
 async function waitForDiscovery(projectId, token) {
   const deadline = Date.now() + 25 * 60_000;
   let last;
@@ -379,6 +399,20 @@ async function waitForDiscovery(projectId, token) {
     await delay(5_000);
   }
   throw new Error(`V2 discovery timed out in ${last?.status || "unknown"} state.`);
+}
+
+async function waitForCatalog(projectId, token) {
+  const deadline = Date.now() + 10 * 60_000;
+  let last;
+  while (Date.now() < deadline) {
+    last = (await jsonRequest(
+      `${apiOrigin}/api/capture-v2/projects/${encodeURIComponent(projectId)}`,
+      { headers: { authorization: `Bearer ${token}` } },
+    )).project;
+    if (last.catalog?.productCount > 0 && last.catalog?.collectionCount > 0) return last;
+    await delay(3_000);
+  }
+  throw new Error(`V2 catalog synchronization timed out after visual discovery (${last?.status || "unknown"}).`);
 }
 
 async function waitForGeneration(projectId, token) {
