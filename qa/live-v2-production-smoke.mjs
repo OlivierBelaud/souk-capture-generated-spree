@@ -28,7 +28,7 @@ mkdirSync(evidenceDirectory, { recursive: true });
 
 let context;
 try {
-  event("qualification-revision", { revision: "semantic-domcontentloaded-v1" });
+  event("qualification-revision", { revision: "bounded-build-tree-v1" });
   const registration = await jsonRequest(`${apiOrigin}/api/capture-register`, {
     method: "POST",
     body: JSON.stringify({ name: "Souk Capture V2 QA", email, password }),
@@ -221,7 +221,9 @@ try {
         },
       );
       assert.equal(bundle.status, 200, "The paid V2 bundle must be downloadable.");
-      writeFileSync(join(evidenceDirectory, "storefront-v2.zip"), Buffer.from(await bundle.arrayBuffer()));
+      const bundleBytes = Buffer.from(await bundle.arrayBuffer());
+      writeFileSync(join(evidenceDirectory, "storefront-v2.zip"), bundleBytes);
+      emitBundleDiagnostics(bundleBytes);
     }
     assert.equal(
       generation.status,
@@ -297,6 +299,30 @@ function extractExtension(archive, destinationRoot) {
     const destination = join(destinationRoot, relativePath);
     mkdirSync(dirname(destination), { recursive: true });
     writeFileSync(destination, contents);
+  }
+}
+
+function emitBundleDiagnostics(bundleBytes) {
+  const files = unzipSync(bundleBytes);
+  const names = Object.keys(files)
+    .filter((name) => name.includes(".souk/validation/"))
+    .sort();
+  event("bundle-validation-files", { names });
+  const fidelityName = names.find((name) => name.endsWith("/fidelity.json"));
+  if (fidelityName) {
+    const fidelity = Buffer.from(files[fidelityName]).toString("utf8");
+    writeFileSync(join(evidenceDirectory, "fidelity.json"), fidelity);
+    process.stdout.write(`SOUK_V2_FIDELITY=${fidelity.replace(/\s+/g, " ")}\n`);
+  }
+  let emittedBytes = 0;
+  for (const name of names.filter((entry) => entry.endsWith(".png"))) {
+    const contents = Buffer.from(files[name]);
+    if (emittedBytes + contents.length > 2_000_000) break;
+    emittedBytes += contents.length;
+    process.stdout.write(`SOUK_V2_VALIDATION_IMAGE=${JSON.stringify({
+      name,
+      png: contents.toString("base64"),
+    })}\n`);
   }
 }
 
