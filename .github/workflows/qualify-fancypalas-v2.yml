@@ -23,7 +23,7 @@ jobs:
     timeout-minutes: 90
     env:
       SOUK_V2_LIVE_API_ORIGIN: https://api.wearesouk.com
-      SOUK_V2_LIVE_APP_ORIGIN: https://souk-capture-frontend-git-v2-de-291bc9-olivier-belauds-projects.vercel.app
+      SOUK_V2_LIVE_APP_ORIGIN: https://souk-capture-v2.vercel.app
       SOUK_V2_LIVE_SOURCE_URL: https://fancypalas.com/
       SOUK_V2_LIVE_EXTENSION_ARCHIVE: ${{ github.workspace }}/artifacts/souk-capture-extension-v2.zip
       SOUK_V2_LIVE_ARTIFACT_DIR: ${{ github.workspace }}/artifacts/evidence
