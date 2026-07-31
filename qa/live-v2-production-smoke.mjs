@@ -28,7 +28,7 @@ mkdirSync(evidenceDirectory, { recursive: true });
 
 let context;
 try {
-  event("qualification-revision", { revision: "linear-source-scan-v1" });
+  event("qualification-revision", { revision: "visual-evidence-v1" });
   const registration = await jsonRequest(`${apiOrigin}/api/capture-register`, {
     method: "POST",
     body: JSON.stringify({ name: "Souk Capture V2 QA", email, password }),
@@ -315,13 +315,21 @@ function emitBundleDiagnostics(bundleBytes) {
     process.stdout.write(`SOUK_V2_FIDELITY=${fidelity.replace(/\s+/g, " ")}\n`);
   }
   let emittedBytes = 0;
-  for (const name of names.filter((entry) => entry.endsWith(".png"))) {
+  const visualEvidenceNames = names
+    .filter((entry) => /\.(?:jpe?g|png)$/i.test(entry))
+    .sort((left, right) => {
+      const leftIsJpeg = /\.jpe?g$/i.test(left);
+      const rightIsJpeg = /\.jpe?g$/i.test(right);
+      return leftIsJpeg === rightIsJpeg ? left.localeCompare(right) : leftIsJpeg ? -1 : 1;
+    });
+  for (const name of visualEvidenceNames) {
     const contents = Buffer.from(files[name]);
     if (emittedBytes + contents.length > 2_000_000) break;
     emittedBytes += contents.length;
     process.stdout.write(`SOUK_V2_VALIDATION_IMAGE=${JSON.stringify({
       name,
-      png: contents.toString("base64"),
+      mime: /\.jpe?g$/i.test(name) ? "image/jpeg" : "image/png",
+      image: contents.toString("base64"),
     })}\n`);
   }
 }
