@@ -36,21 +36,29 @@ jobs:
         with:
           node-version: 22
 
+      - name: Verify isolated public V2 application
+        run: |
+          curl --fail --location --retry 5 "$SOUK_V2_LIVE_APP_ORIGIN" --output artifacts-v2-landing.html
+          test -s artifacts-v2-landing.html
+
       - name: Install QA dependencies
         run: npm install --no-save --legacy-peer-deps playwright@1.60.0 fflate@0.8.3
 
       - name: Install Chromium
-        run: npx playwright install --with-deps chromium
-
-      - name: Verify isolated public V2 application
-        run: curl --fail --location --retry 5 "$SOUK_V2_LIVE_APP_ORIGIN" --output /dev/null
+        run: npx playwright install chromium
 
       - name: Load the exact V2 extension revision
         run: |
           mkdir -p artifacts/evidence
           install -m 0644 qa/souk-capture-extension-v2.zip "$SOUK_V2_LIVE_EXTENSION_ARCHIVE"
-          unzip -p "$SOUK_V2_LIVE_EXTENSION_ARCHIVE" background.js |
-            grep -q "canonicalDiscoveryTarget"
+          unzip -p "$SOUK_V2_LIVE_EXTENSION_ARCHIVE" background.js > artifacts/evidence/extension-background.js
+          grep -q "canonicalDiscoveryTarget" artifacts/evidence/extension-background.js
+          grep -q "isMissingStorefrontDocument" artifacts/evidence/extension-background.js
+          if grep -q 'state.origin}/pages/wishlist' artifacts/evidence/extension-background.js; then
+            echo "Stale hardcoded wishlist seed found in extension binary" >&2
+            exit 1
+          fi
+          sha256sum "$SOUK_V2_LIVE_EXTENSION_ARCHIVE" > artifacts/evidence/extension-sha256.txt
 
       - name: Run deployed FancyPalas V2 qualification
         run: xvfb-run -a node qa/live-v2-production-smoke.mjs
