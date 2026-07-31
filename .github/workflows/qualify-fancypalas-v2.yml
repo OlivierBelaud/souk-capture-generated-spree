@@ -50,10 +50,12 @@ jobs:
       - name: Load the exact V2 extension revision
         run: |
           mkdir -p artifacts/evidence
-          install -m 0644 qa/souk-capture-extension-v2.zip "$SOUK_V2_LIVE_EXTENSION_ARCHIVE"
+          curl --fail --location --retry 5 "$SOUK_V2_LIVE_APP_ORIGIN/souk-capture-extension-v2.zip" --output "$SOUK_V2_LIVE_EXTENSION_ARCHIVE"
           unzip -p "$SOUK_V2_LIVE_EXTENSION_ARCHIVE" background.js > artifacts/evidence/extension-background.js
           grep -q "canonicalDiscoveryTarget" artifacts/evidence/extension-background.js
           grep -q "isMissingStorefrontDocument" artifacts/evidence/extension-background.js
+          grep -q "discoveryDeadlineAt" artifacts/evidence/extension-background.js
+          grep -q "Add current page as a template" <(unzip -p "$SOUK_V2_LIVE_EXTENSION_ARCHIVE" popup.js)
           if grep -q 'state.origin}/pages/wishlist' artifacts/evidence/extension-background.js; then
             echo "Stale hardcoded wishlist seed found in extension binary" >&2
             exit 1
