@@ -55,7 +55,7 @@ jobs:
           grep -q "canonicalDiscoveryTarget" artifacts/evidence/extension-background.js
           grep -q "isMissingStorefrontDocument" artifacts/evidence/extension-background.js
           grep -q "discoveryDeadlineAt" artifacts/evidence/extension-background.js
-          grep -q "Add current page as a template" <(unzip -p "$SOUK_V2_LIVE_EXTENSION_ARCHIVE" popup.js)
+          grep -q "Add current page as a template" <(unzip -p "$SOUK_V2_LIVE_EXTENSION_ARCHIVE" popup.mjs)
           if grep -q 'state.origin}/pages/wishlist' artifacts/evidence/extension-background.js; then
             echo "Stale hardcoded wishlist seed found in extension binary" >&2
             exit 1
